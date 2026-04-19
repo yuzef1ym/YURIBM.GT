@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Artifact Ratings – Guardian Tales</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+  <style>
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+  </style>
+</head>
+<body style="margin:0;padding:0;background:linear-gradient(135deg,#1a2a3a 0%,#0d1b2a 100%);min-height:100vh;color:white;">
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const TRANSLATIONS = {
+  ar: {
+    dir: "rtl",
+    title: "Artifact Ratings",
+    subtitle: "Guardian Tales",
+    quickLabel: "⚡ اختيار سريع",
+    presets: ["🎯 3× حرجة", "⚔️ 3× هجوم", "💥 3× مهارة"],
+    stat: ["الخاصية 1", "الخاصية 2", "الخاصية 3"],
+    types: { crit: "🎯 فرصة ضربات حرجة", atk: "⚔️ هجوم", skill: "💥 ضرر المهارة" },
+    calcBtn: "احسب التقييم ⚡",
+    resultTitle: "🏆 نتيجة التقييم",
+    scoreLabel: "قيمة القطعة",
+    ratingLabel: "التقييم",
+    scaleTitle: "🏅 مقياس التقييم",
+    ratings: ["قطعة سيئة","قطعة ضعيفة","قطعة جيدة","قطعة ممتازة","قطعة أسطورية","قطعة خرافية","شبه مستحيلة"],
+    errors: {
+      empty: "أدخل قيمة صحيحة",
+      range: (mn, mx) => `${mn}% – ${mx}% فقط`,
+    },
+  },
+  en: {
+    dir: "ltr",
+    title: "Artifact Ratings",
+    subtitle: "Guardian Tales",
+    quickLabel: "⚡ Quick Select",
+    presets: ["🎯 3× Crit", "⚔️ 3× ATK", "💥 3× Skill"],
+    stat: ["Stat 1", "Stat 2", "Stat 3"],
+    types: { crit: "🎯 Crit Chance", atk: "⚔️ ATK", skill: "💥 Skill DMG" },
+    calcBtn: "⚡ Calculate Rating",
+    resultTitle: "🏆 Result",
+    scoreLabel: "Artifact Score",
+    ratingLabel: "Rating",
+    scaleTitle: "🏅 Rating Scale",
+    ratings: ["Bad","Weak","Good","Excellent","Legendary","Mythic","Near Impossible"],
+    errors: {
+      empty: "Enter a valid value",
+      range: (mn, mx) => `Must be ${mn}% – ${mx}%`,
+    },
+  },
+};
+
+const WEIGHTS = { crit: 3, atk: 9/7, skill: 9/11 };
+
+const RANGES = {
+  crit:  { min: 1.1, max: 3,  label_ar: "فرصة ضربات حرجة", label_en: "Crit Chance", placeholder: "1.1 – 3"  },
+  atk:   { min: 2.1, max: 7,  label_ar: "هجوم",             label_en: "ATK",         placeholder: "2.1 – 7"  },
+  skill: { min: 5.2, max: 11, label_ar: "ضرر المهارة",       label_en: "Skill DMG",   placeholder: "5.2 – 11" },
+};
+
+const RATING_SCALE = [
+  { min: 1,  max: 13,  color: "text-red-400",    border: "border-red-500",    icon: "💀", bar: "from-red-500 to-red-400"       },
+  { min: 13, max: 16,  color: "text-orange-400", border: "border-orange-500", icon: "😕", bar: "from-orange-500 to-orange-400" },
+  { min: 16, max: 19,  color: "text-yellow-400", border: "border-yellow-500", icon: "👍", bar: "from-yellow-500 to-yellow-400" },
+  { min: 19, max: 20,  color: "text-blue-400",   border: "border-blue-500",   icon: "⭐", bar: "from-blue-500 to-blue-400"     },
+  { min: 20, max: 22,  color: "text-purple-400", border: "border-purple-500", icon: "🔮", bar: "from-purple-500 to-purple-400" },
+  { min: 22, max: 25,  color: "text-pink-400",   border: "border-pink-500",   icon: "💎", bar: "from-pink-500 to-pink-400"     },
+  { min: 25, max: 100, color: "text-teal-300",   border: "border-teal-400",   icon: "🌟", bar: "from-teal-400 to-cyan-300"     },
+];
+
+const PRESET_TYPES = [
+  ["crit",  "crit",  "crit" ],
+  ["atk",   "atk",   "atk"  ],
+  ["skill", "skill", "skill"],
+];
+
+function getRating(score) {
+  return RATING_SCALE.find(r => score >= r.min && score < r.max) ?? RATING_SCALE[RATING_SCALE.length - 1];
+}
+function getBarWidth(score) { return Math.min((score / 27) * 100, 100); }
+
+function App() {
+  const [lang, setLang] = useState("ar");
+  const t = TRANSLATIONS[lang];
+  const isAr = lang === "ar";
+
+  const [stats, setStats] = useState([
+    { type: "crit",  value: "", error: "" },
+    { type: "atk",   value: "", error: "" },
+    { type: "skill", value: "", error: "" },
+  ]);
+  const [result, setResult]       = useState(null);
+  const [showResult, setShowResult] = useState(false);
+  const [animating, setAnimating]   = useState(false);
+
+  function applyPreset(types) {
+    setStats(types.map(tp => ({ type: tp, value: "", error: "" })));
+    setShowResult(false); setResult(null);
+  }
+
+  function handleTypeChange(index, newType) {
+    setStats(prev => prev.map((s, i) => i === index ? { ...s, type: newType, value: "", error: "" } : s));
+    setShowResult(false);
+  }
+
+  function handleValueChange(index, raw) {
+    const range = RANGES[stats[index].type];
+    let error = "";
+    const num = parseFloat(raw);
+    if (raw !== "" && !isNaN(num) && (num < range.min || num > range.max))
+      error = t.errors.range(range.min, range.max);
+    setStats(prev => prev.map((s, i) => i === index ? { ...s, value: raw, error } : s));
+    setShowResult(false);
+  }
+
+  function calculate() {
+    let hasError = false;
+    const validated = stats.map(s => {
+      const range = RANGES[s.type];
+      const num = parseFloat(s.value);
+      if (s.value === "" || isNaN(num)) { hasError = true; return { ...s, error: t.errors.empty }; }
+      if (num < range.min || num > range.max) { hasError = true; return { ...s, error: t.errors.range(range.min, range.max) }; }
+      return { ...s, error: "" };
+    });
+    setStats(validated);
+    if (hasError) { setShowResult(false); return; }
+    const score = validated.reduce((acc, s) => acc + parseFloat(s.value) * WEIGHTS[s.type], 0);
+    const rating = getRating(score);
+    const ratingIndex = RATING_SCALE.indexOf(rating);
+    setResult({ score, rating, ratingIndex });
+    setAnimating(true); setShowResult(true);
+  }
+
+  useEffect(() => {
+    if (animating) {
+      const timer = setTimeout(() => setAnimating(false), 600);
+      return () => clearTimeout(timer);
+    }
+  }, [animating]);
+
+  return (
+    <div
+      dir={t.dir}
+      style={{
+        fontFamily: isAr ? "'Tajawal', sans-serif" : "system-ui, sans-serif",
+        minHeight: "100vh",
+        padding: "20px 12px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+      }}
+    >
+      {/* Language Toggle */}
+      <div className={`w-full max-w-4xl flex mb-3 ${isAr ? "justify-start" : "justify-end"}`}>
+        <div className="flex bg-gray-800/80 border border-teal-700/40 rounded-lg p-0.5 gap-0.5">
+          {["ar","en"].map(l => (
+            <button
+              key={l}
+              onClick={() => setLang(l)}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${
+                lang === l ? "bg-teal-600 text-white shadow" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              {l === "ar" ? "🇸🇦 العربية" : "🇬🇧 English"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="w-full max-w-4xl flex flex-col lg:flex-row gap-4">
+
+        {/* ── Sidebar ── */}
+        <aside className="lg:w-52 shrink-0 rounded-xl overflow-hidden border border-teal-600/50 bg-[#0f1d2e]/90 shadow-xl">
+          <div className="px-3 py-3">
+            <p className={`text-[11px] font-bold text-teal-300 mb-2 ${isAr ? "text-right" : "text-left"}`}>{t.scaleTitle}</p>
+            <ul className="space-y-1">
+              {RATING_SCALE.map((r, i) => (
+                <li
+                  key={i}
+                  className={`flex justify-between items-center px-2 py-1 rounded text-[10px] bg-gray-800/40 ${isAr ? "border-r-2" : "border-l-2"} ${r.border}`}
+                >
+                  <span className={r.color}>{r.icon} {t.ratings[i]}</span>
+                  <span className="text-gray-500">{r.min}–{r.max === 100 ? "27+" : r.max}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+
+        {/* ── Main ── */}
+        <main className="flex-1 flex flex-col gap-4">
+          <div className="rounded-xl overflow-hidden shadow-xl border border-teal-600/50 bg-[#0f1d2e]/90">
+
+            {/* Header */}
+            <div className="py-3 px-5 text-center bg-gradient-to-r from-teal-600 to-blue-600 border-b-2 border-yellow-400/70">
+              <h1 className="text-2xl font-extrabold tracking-wide">{t.title}</h1>
+              <p className="text-yellow-200 text-[10px] font-semibold tracking-widest uppercase">{t.subtitle}</p>
+            </div>
+
+            {/* Quick Presets */}
+            <div className={`px-4 py-3 border-b border-teal-700/30 ${isAr ? "text-right" : "text-left"}`}>
+              <p className="text-[10px] text-teal-400 font-bold mb-2">{t.quickLabel}</p>
+              <div className="grid grid-cols-3 gap-2">
+                {PRESET_TYPES.map((types, i) => (
+                  <button
+                    key={i}
+                    onClick={() => applyPreset(types)}
+                    className="py-2 px-2 rounded-lg bg-gray-800/70 hover:bg-teal-700/50 border border-gray-700 hover:border-teal-500 transition-all text-[11px] text-gray-200 hover:text-white active:scale-95 font-bold"
+                  >
+                    {t.presets[i]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Stat Inputs — 3 side by side */}
+            <div className="px-4 pt-4 pb-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {stats.map((stat, index) => (
+                  <div
+                    key={index}
+                    className={`flex flex-col gap-1.5 rounded-lg px-3 py-2.5 border ${
+                      stat.error ? "border-red-500/70 bg-red-900/10" : "border-teal-600/40 bg-gray-800/50"
+                    }`}
+                  >
+                    <p className={`text-[10px] font-bold text-teal-400 ${isAr ? "text-right" : "text-left"}`}>
+                      {t.stat[index]}
+                    </p>
+                    <select
+                      value={stat.type}
+                      onChange={e => handleTypeChange(index, e.target.value)}
+                      className={`w-full bg-gray-900/80 border border-gray-700 rounded-lg px-2 py-1.5 text-[11px] outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer ${isAr ? "text-right" : "text-left"}`}
+                    >
+                      <option value="crit">{t.types.crit}</option>
+                      <option value="atk">{t.types.atk}</option>
+                      <option value="skill">{t.types.skill}</option>
+                    </select>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={stat.value}
+                        onChange={e => handleValueChange(index, e.target.value)}
+                        placeholder={RANGES[stat.type].placeholder}
+                        className={`w-full bg-gray-900/80 border border-gray-700 rounded-lg px-3 py-1.5 text-[12px] outline-none focus:ring-1 focus:ring-blue-500 ${isAr ? "pr-7 text-right" : "pl-7 text-left"}`}
+                      />
+                      <span className={`absolute ${isAr ? "right-2" : "left-2"} top-1/2 -translate-y-1/2 text-gray-500 text-[10px]`}>%</span>
+                    </div>
+                    {stat.error && (
+                      <span className={`text-red-400 text-[9px] ${isAr ? "text-right" : "text-left"}`}>⚠️ {stat.error}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Calculate Button */}
+            <div className="px-4 pb-4 pt-3">
+              <button
+                onClick={calculate}
+                className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-teal-500 rounded-xl font-bold text-sm hover:opacity-90 hover:scale-[1.01] active:scale-95 transition-all shadow-lg shadow-teal-900/40"
+              >
+                {t.calcBtn}
+              </button>
+            </div>
+          </div>
+
+          {/* Result */}
+          {showResult && result && (
+            <div className={`rounded-xl border-2 ${result.rating.border} bg-[#0f1d2e]/95 shadow-xl overflow-hidden transition-all duration-500 ${animating ? "opacity-0 scale-95" : "opacity-100 scale-100"}`}>
+              <div className="px-5 py-2 bg-black/30 border-b border-white/10 text-center">
+                <span className="text-xs font-bold text-yellow-300">{t.resultTitle}</span>
+              </div>
+              <div className="px-5 py-4 flex flex-col sm:flex-row gap-4 items-center">
+                <div className="text-center">
+                  <p className="text-[9px] text-blue-300 mb-0.5">{t.scoreLabel}</p>
+                  <p className="text-4xl font-black text-teal-300 leading-none">{result.score.toFixed(2)}</p>
+                </div>
+                <div className="hidden sm:block w-px h-12 bg-white/10" />
+                <div className="text-center flex-1">
+                  <p className="text-[9px] text-blue-300 mb-1">{t.ratingLabel}</p>
+                  <p className={`text-xl font-extrabold ${result.rating.color}`}>
+                    {result.rating.icon} {t.ratings[result.ratingIndex]}
+                  </p>
+                </div>
+                <div className="hidden sm:block w-px h-12 bg-white/10" />
+                <div className={`text-[10px] text-gray-400 space-y-0.5 w-full sm:w-auto ${isAr ? "text-right" : "text-left"}`}>
+                  {stats.map((s, i) => {
+                    const label = isAr ? RANGES[s.type].label_ar : RANGES[s.type].label_en;
+                    const w = WEIGHTS[s.type];
+                    const res = parseFloat(s.value) * w;
+                    return (
+                      <div key={i} className="flex justify-between gap-3">
+                        <span className="text-gray-300">{label}</span>
+                        <span className="text-teal-300 font-bold">{s.value}% × {w.toFixed(3)} = {res.toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="px-5 pb-4">
+                <div className="h-2.5 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full bg-gradient-to-r ${result.rating.bar} rounded-full transition-all duration-1000`}
+                    style={{ width: `${getBarWidth(result.score)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[8px] text-gray-600 mt-1 px-0.5">
+                  {["13","16","19","20","22","25","27+"].map(v => <span key={v}>{v}</span>)}
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
